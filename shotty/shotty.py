@@ -49,9 +49,6 @@ def list_snapshots(project, list_all):
 	for i in instances:
 		for v in i.volumes.all():
 			for s in v.snapshots.all():
-				gmt_start_time=s.start_time.strftime('%b %d, %Y @ %H:%M:%S UTC')
-				utc_start_time=calendar.timegm(time.strptime(gmt_start_time, '%b %d, %Y @ %H:%M:%S UTC'))
-				start_time_delta=utc_start_time-(84600*7)
 				print(", ".join((
 					s.id,
 					v.id,
@@ -59,8 +56,6 @@ def list_snapshots(project, list_all):
 					s.state,
 					s.progress,
 					s.start_time.strftime("%c"),
-					str(utc_start_time),
-					str(start_time_delta)
 					)))
 
 				if s.state == 'completed' and not list_all: break
