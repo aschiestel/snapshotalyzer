@@ -40,3 +40,16 @@ iPython for development purposes
 *command* is instances, volumes, or snapshots
 *subcommand* - depends on command
 *project* is optional
+
+##Package
+
+create an installable dist file to dist/ \
+(the resulting file can be places in any location, including s3)
+`pipenv run python setuip.py bdist_wheel`
+
+install package locally or from a share
+(for uninstall replace install with uninstall)
+`pip3 install dist/snapshotalyzer-0.1-py3-none-any.whl`
+
+verify installation
+`pip3 show snapshotalyzer`
