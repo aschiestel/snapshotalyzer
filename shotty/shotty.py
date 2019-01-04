@@ -5,12 +5,15 @@ import click
 import calendar
 import time
 
-session = boto3.Session(profile_name='shotty')
-ec2 = session.resource('ec2')
 
-def filter_instances(project, server_id = None):
+def start_session(profile='shotty',region='us-east-2'):
+	session = boto3.Session(region_name=region,profile_name=profile)
+	ec2 = session.resource('ec2')
+	return ec2
+
+
+def filter_instances(ec2, project, server_id = None):
 	instances =[]
-
 	if server_id:
 		instances = ec2.instances.filter(InstanceIds=[server_id])
 	elif project:
@@ -18,8 +21,8 @@ def filter_instances(project, server_id = None):
 		instances = ec2.instances.filter(Filters=filters)
 	else:
 		instances = ec2.instances.all()	
-	
 	return instances
+
 
 def has_pending_snapshot(volume):
 	snapshots = list(volume.snapshots.all())
@@ -29,12 +32,13 @@ def has_pending_snapshot(volume):
 @click.group()
 @click.option('--profile', default='shotty',
 			  help="Specify a profile other than 'shotty'")
-def cli(profile):
-	"""establish session"""
-	#if the user declares a profile, rerun the session and ec2 vars
-	#this did not work if the vars were not already declared above
-	session = boto3.Session(profile_name=profile)
-	ec2 = session.resource('ec2')
+@click.option('--region', default='us-east-2',
+			  help="Specify a specific region e.g. us-east-1")
+@click.pass_context
+def cli(ctx,profile,region):
+	"""establish session params"""
+	ctx.obj['PROFILE'] = profile
+	ctx.obj['REGION'] = region
 
 
 @cli.group('snapshots')
@@ -46,9 +50,11 @@ def snapshots():
 	help="Only snapshots for project (tag Project:<name>)")
 @click.option('--all', 'list_all', default=False, is_flag=True,
 			  help="List all snapshots for each volume, not just the most recent")
-def list_snapshots(project, list_all):
+@click.pass_context
+def list_snapshots(ctx, project, list_all):
 	"List EC2 snapshots"
-	instances = filter_instances(project)
+	ec2 = start_session(ctx.obj['PROFILE'],ctx.obj['REGION'])
+	instances = filter_instances(ec2, project)
 	for i in instances:
 		for v in i.volumes.all():
 			for s in v.snapshots.all():
@@ -62,7 +68,6 @@ def list_snapshots(project, list_all):
 					)))
 
 				if s.state == 'completed' and not list_all: break
-
 	return
 
 
@@ -75,9 +80,11 @@ def volumes():
 			  help="The instance ID")
 @click.option('--project', default=None,
 	help="Only volumes for project (tag Project:<name>)")
-def list_volumes(project, server_id):
+@click.pass_context
+def list_volumes(ctx, project, server_id):
 	"List EC2 volumes"
-	instances = filter_instances(project, server_id)
+	ec2 = start_session(ctx.obj['PROFILE'],ctx.obj['REGION'])
+	instances = filter_instances(ec2, project, server_id)
 	for i in instances:
 		for v in i.volumes.all():
 			print(", ".join((
@@ -87,7 +94,9 @@ def list_volumes(project, server_id):
 				str(v.size) + "GiB",
 				v.encrypted and "Encrypted" or "Not Encrypted"
         		)))
-	
+	return
+
+
 @cli.group('instances')
 def instances():
 	"""Commands for instances"""
@@ -102,9 +111,11 @@ def instances():
 	help="Only instances for project (tag Project:<name>)")
 @click.option('--force', is_flag=True,
 			  help="All instances")
-def create_snapshots(project, force, server_id, age):
+@click.pass_context
+def create_snapshots(ctx, project, force, server_id, age):
 	"Create snapshots for EC2 instances"
-	instances = filter_instances(project, server_id)
+	ec2 = start_session(ctx.obj['PROFILE'],ctx.obj['REGION'])
+	instances = filter_instances(ec2, project, server_id)
 
 	if server_id or project or force:
 		for i in instances:
@@ -160,9 +171,11 @@ def create_snapshots(project, force, server_id, age):
 @instances.command('list')
 @click.option('--project', default=None,
 	help="Only instances for project (tag Project:<name>)")
-def list_instances(project):
+@click.pass_context
+def list_instances(ctx, project):
 	"List EC2 instances"
-	instances = filter_instances(project)
+	ec2 = start_session(ctx.obj['PROFILE'],ctx.obj['REGION'])
+	instances = filter_instances(ec2, project)
 		
 	for i in instances:
 	    tags = { t['Key']: t['Value'] for t in i.tags or []}
@@ -185,9 +198,11 @@ def list_instances(project):
 	help="Only instances for project")
 @click.option('--force', is_flag=True,
 			  help="All instances")
-def stop_instaces(project, force, server_id):
+@click.pass_context
+def stop_instaces(ctx, project, force, server_id):
 	"Stop EC2 instances"
-	instances = filter_instances(project, server_id)
+	ec2 = start_session(ctx.obj['PROFILE'],ctx.obj['REGION'])
+	instances = filter_instances(ec2, project, server_id)
 
 	if server_id or project or force:
 		for i in instances:
@@ -211,9 +226,11 @@ def stop_instaces(project, force, server_id):
 	help="Only instances for project")
 @click.option('--force', is_flag=True,
 			  help="All instances")
-def start_instaces(project, force, server_id):
+@click.pass_context
+def start_instaces(ctx, project, force, server_id):
 	"Start EC2 instances"
-	instances = filter_instances(project, server_id)
+	ec2 = start_session(ctx.obj['PROFILE'],ctx.obj['REGION'])
+	instances = filter_instances(ec2, project, server_id)
 
 	if server_id or project or force:
 		for i in instances:
@@ -237,9 +254,11 @@ def start_instaces(project, force, server_id):
 			  help="All instances for project")
 @click.option('--force', is_flag=True,
 			  help="All instances")
-def reboot_instaces(project, server_id, force):
+@click.pass_context
+def reboot_instaces(ctx, project, server_id, force):
 	"reboot EC2 instance"
-	instances = filter_instances(project)
+	ec2 = start_session(ctx.obj['PROFILE'],ctx.obj['REGION'])
+	instances = filter_instances(ec2, project)
 
 	if server_id or project or force:
 		for i in instances:
@@ -258,4 +277,4 @@ def reboot_instaces(project, server_id, force):
 
 
 if __name__ == '__main__':
-	cli()
+	cli(obj={})
