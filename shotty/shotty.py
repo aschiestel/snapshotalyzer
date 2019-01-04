@@ -1,6 +1,7 @@
 import boto3
 import botocore
 import click
+#import calendar and time to support --age parameter for snapshot creation
 import calendar
 import time
 
@@ -30,6 +31,8 @@ def has_pending_snapshot(volume):
 			  help="Specify a profile other than 'shotty'")
 def cli(profile):
 	"""establish session"""
+	#if the user declares a profile, rerun the session and ec2 vars
+	#this did not work if the vars were not already declared above
 	session = boto3.Session(profile_name=profile)
 	ec2 = session.resource('ec2')
 
@@ -107,41 +110,44 @@ def create_snapshots(project, force, server_id, age):
 		for i in instances:
 
 			aged_out=True
-			if age:
-				utc_start_time = None
-				now = calendar.timegm(time.gmtime())
-				time_delta = now - (86400 * int(age))
-				print(now,time_delta)
-				for v in i.volumes.all():
+			instance_state = i.state['Name']
+			instance_state_now = instance_state
+
+			for v in i.volumes.all():
+
+				if age:
+					utc_start_time = None
+					now = calendar.timegm(time.gmtime())
+					time_delta = now - (86400 * int(age))
+					# print(now,time_delta)
 					for s in v.snapshots.all():
 						gmt_start_time = s.start_time.strftime('%b %d, %Y @ %H:%M:%S UTC')
 						utc_start_time = calendar.timegm(time.strptime(gmt_start_time, '%b %d, %Y @ %H:%M:%S UTC'))
 						if s.state == 'completed': break
-				if utc_start_time:
-					if int(utc_start_time) > int(time_delta):
-						aged_out=False
+					if utc_start_time:
+						if int(utc_start_time) > int(time_delta):
+							aged_out = False
 
-			if aged_out is True:
-				instance_state = i.state['Name']
-				if instance_state != "stopped":
-					print("Stopping {0}...".format(i.id))
-					i.stop()
-					i.wait_until_stopped()
-				for v in i.volumes.all():
+				if aged_out is True:
 					if has_pending_snapshot(v):
 						print(" Skipping {0}, snapshot already in progress".format(v.id))
 						continue
 					print("Creating snapshot of {0}...".format(v.id))
 					try:
+						if instance_state != "stopped" and instance_state_now != "stopped":
+							print("Stopping {0}...".format(i.id))
+							i.stop()
+							i.wait_until_stopped()
+							instance_state_now = "stopped"
 						v.create_snapshot(Description="Created by Snapshotalyzer")
 					except botocore.exceptions.ClientError as e:
 						print(" Could not create snapshot {0}. ".format(v.id) + str(e))
 						continue
 
-				if instance_state != "stopped":
-					print("Starting {0}...".format(i.id))
-					i.start()
-					i.wait_until_running()
+			if instance_state != "stopped" and instance_state_now == "stopped":
+				print("Starting {0}...".format(i.id))
+				i.start()
+				i.wait_until_running()
 	
 		print("Complete!")
 
